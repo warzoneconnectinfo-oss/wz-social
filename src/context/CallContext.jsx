@@ -49,6 +49,7 @@ export function CallProvider({ children }) {
   const userIdRef       = useRef(null);
   const incomingCallRef = useRef(null);
   const isHangingUp     = useRef(false);
+  const iceCandidateBuffer = useRef([]);
 
   useEffect(() => { activeCallRef.current   = activeCall;       }, [activeCall]);
   useEffect(() => { callStatusRef.current   = callStatus;       }, [callStatus]);
@@ -184,11 +185,23 @@ export function CallProvider({ children }) {
     const pc = pcRef.current;
     if (sig.type === 'answer' && pc) {
       clearTimeout(ringTimer.current);
-      try { await pc.setRemoteDescription(new RTCSessionDescription(sig.data.sdp)); }
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(sig.data.sdp));
+        // Flush ICE candidates that arrived before the answer was processed
+        for (const c of iceCandidateBuffer.current) {
+          try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch {}
+        }
+        iceCandidateBuffer.current = [];
+      }
       catch (e) { console.warn('setRemoteDescription(answer):', e); }
     }
     if (sig.type === 'ice-candidate' && pc) {
-      try { await pc.addIceCandidate(new RTCIceCandidate(sig.data.candidate)); } catch {}
+      if (!pc.remoteDescription) {
+        // Buffer — remote description not set yet (answer hasn't been processed)
+        iceCandidateBuffer.current.push(sig.data.candidate);
+      } else {
+        try { await pc.addIceCandidate(new RTCIceCandidate(sig.data.candidate)); } catch {}
+      }
     }
     if (sig.type === 'hangup' || sig.type === 'declined') {
       setIncomingCall(null);
@@ -441,6 +454,7 @@ export function CallProvider({ children }) {
     sigSubRef.current?.unsubscribe();
     sigSubRef.current = null;
     processedSigs.current = new Set();
+    iceCandidateBuffer.current = [];
     clearInterval(durationTimer.current);
     clearInterval(pollTimer.current);
     clearTimeout(ringTimer.current);
