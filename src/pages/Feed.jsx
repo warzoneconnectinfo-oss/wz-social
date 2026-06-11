@@ -141,11 +141,17 @@ function PostCard({ post, userId, userProfile, onLike, onReport, onDelete, onlin
         {renderContent(post.content)}
       </p>
 
-      {/* Image */}
+      {/* Image / Video */}
       {post.image_url && (
-        <img src={post.image_url} alt=""
-          className="rounded-lg mb-3 max-h-80 w-full object-cover border border-zinc-800"
-          onError={e => { e.target.style.display = 'none'; }} />
+        /\.(mp4|webm|mov|avi|mkv)(\?|$)/i.test(post.image_url) ? (
+          <video src={post.image_url} controls
+            className="rounded-lg mb-3 w-full h-auto border border-zinc-800 bg-black"
+            style={{ maxHeight: '70vh' }} />
+        ) : (
+          <img src={post.image_url} alt=""
+            className="rounded-lg mb-3 w-full h-auto border border-zinc-800"
+            onError={e => { e.target.style.display = 'none'; }} />
+        )
       )}
 
       {/* Action bar */}
@@ -488,8 +494,12 @@ export default function Feed() {
                   className="w-full bg-transparent text-white text-sm placeholder:text-zinc-600 resize-none focus:outline-none"
                 />
                 {imgPreview && (
-                  <div className="relative mt-2 inline-block">
-                    <img src={imgPreview} alt="preview" className="rounded-lg max-h-40 border border-zinc-700" />
+                  <div className="relative mt-2">
+                    {imgFile?.type?.startsWith('video/') ? (
+                      <video src={imgPreview} className="rounded-lg max-h-48 w-full border border-zinc-700 bg-black" />
+                    ) : (
+                      <img src={imgPreview} alt="preview" className="rounded-lg max-h-48 w-full h-auto border border-zinc-700" />
+                    )}
                     <button type="button" onClick={clearImg}
                       className="absolute top-1 right-1 bg-black/70 rounded-full p-0.5 text-white hover:text-red-400">
                       <X size={12} />
@@ -502,10 +512,11 @@ export default function Feed() {
             <div className="flex items-center justify-between mt-3 pt-3 border-t border-zinc-800">
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => imgInputRef.current?.click()}
-                  className="text-zinc-500 hover:text-orange-400 p-1 transition-colors" title="Attach image">
+                  className="text-zinc-500 hover:text-orange-400 p-1 transition-colors" title="Attach image or video">
                   <ImageIcon size={16} />
                 </button>
-                <input ref={imgInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif"
+                <input ref={imgInputRef} type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime"
                   className="hidden" onChange={handleImgSelect} />
                 <span className="text-zinc-600 text-xs">{content.length}/500</span>
               </div>

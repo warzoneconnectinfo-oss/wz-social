@@ -42,7 +42,7 @@ export default function IncomingCallModal() {
 
   if (!incomingCall) return null;
 
-  const { caller } = incomingCall;
+  const { caller, isGroupInvite } = incomingCall;
   const name = caller?.display_name || caller?.username || 'Unknown';
 
   return (
@@ -51,14 +51,16 @@ export default function IncomingCallModal() {
 
         {/* Pulsing avatar */}
         <div className="relative mx-auto w-24 h-24 mb-5">
-          <div className="absolute inset-0 rounded-full bg-green-500/25 animate-ping" />
+          <div className={`absolute inset-0 rounded-full animate-ping ${isGroupInvite ? 'bg-orange-500/25' : 'bg-green-500/25'}`} />
           <div className="relative w-24 h-24 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-4xl font-bold shadow-lg">
             {name[0].toUpperCase()}
           </div>
         </div>
 
         <p className="text-white text-xl font-bold mb-1">{name}</p>
-        <p className="text-zinc-400 text-sm mb-8">Incoming call…</p>
+        <p className="text-zinc-400 text-sm mb-8">
+          {isGroupInvite ? 'Inviting you to a group call…' : 'Incoming call…'}
+        </p>
 
         <div className="flex justify-center gap-12">
           <div className="flex flex-col items-center gap-2">

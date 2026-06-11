@@ -200,7 +200,21 @@ create policy "clans_delete_owner" on public.clans for delete using (auth.uid() 
 -- CLAN MEMBERS
 create policy "clan_members_read_all"    on public.clan_members for select using (true);
 create policy "clan_members_insert_self" on public.clan_members for insert with check (auth.uid() = profile_id);
-create policy "clan_members_delete_self" on public.clan_members for delete using (auth.uid() = profile_id);
+-- Delete: self OR clan owner
+create policy "clan_members_delete" on public.clan_members for delete using (
+  auth.uid() = profile_id
+  or exists (
+    select 1 from public.clan_members o
+    where o.clan_id = clan_members.clan_id and o.profile_id = auth.uid() and o.role = 'owner'
+  )
+);
+-- Update: clan owner only (for role changes / transfer leadership)
+create policy "clan_members_update_owner" on public.clan_members for update using (
+  exists (
+    select 1 from public.clan_members o
+    where o.clan_id = clan_members.clan_id and o.profile_id = auth.uid() and o.role = 'owner'
+  )
+);
 
 -- ROOMS
 create policy "rooms_read_auth"    on public.rooms for select using (auth.uid() is not null);
@@ -270,6 +284,19 @@ $$;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- Auto-clear profiles.clan_id when a member is removed from clan_members
+create or replace function public.on_clan_member_removed()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  update public.profiles set clan_id = null where id = old.profile_id;
+  return old;
+end;
+$$;
+
+create trigger clan_member_removed
+  after delete on public.clan_members
+  for each row execute procedure public.on_clan_member_removed();
 
 -- Auto-update updated_at on profile changes
 create or replace function public.set_updated_at()

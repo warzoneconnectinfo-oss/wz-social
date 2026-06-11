@@ -6,11 +6,29 @@ import Avatar from '../components/Avatar';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 const RANKS     = ['Bronze','Silver','Gold','Platinum','Diamond','Crimson','Iridescent','Top 250'];
-const PLATFORMS = ['PC','PlayStation 4','PlayStation 5','Xbox','Cross-Play'];
+const PLATFORMS = ['PC','PlayStation','Xbox','Cross-Play'];
 const TIMEZONES = [
-  'UTC-8 (PST)','UTC-7 (MST)','UTC-6 (CST)','UTC-5 (EST)',
-  'UTC+0 (GMT)','UTC+1 (CET)','UTC+3 (MSK)','UTC+5:30 (IST)',
-  'UTC+8 (SGT)','UTC+9 (JST)','UTC+10 (AEST)',
+  // Americas
+  'Honolulu','Anchorage','Los Angeles','Vancouver','Denver','Phoenix',
+  'Chicago','Mexico City','New York','Toronto','Caracas',
+  'Bogotá','Lima','São Paulo','Buenos Aires','Santiago',
+  // Europe & Africa
+  'London','Lisbon','Paris','Berlin','Madrid','Rome','Amsterdam',
+  'Stockholm','Warsaw','Helsinki','Athens','Cairo',
+  'Istanbul','Riyadh','Dubai','Moscow','Johannesburg','Lagos',
+  // Asia & Pacific
+  'Karachi','Mumbai','Kolkata','Dhaka','Bangkok','Jakarta',
+  'Singapore','Kuala Lumpur','Ho Chi Minh City','Hong Kong',
+  'Beijing','Shanghai','Taipei','Seoul','Tokyo',
+  'Brisbane','Sydney','Melbourne','Auckland',
+];
+const SERVERS = [
+  'NA East','NA West','NA Central',
+  'South America',
+  'EU West','EU Central','EU East',
+  'Middle East','Africa',
+  'Asia Pacific','Southeast Asia','Japan','Korea','South Asia',
+  'Oceania',
 ];
 const LOADOUT_FIELDS = [
   { key: 'primary',   label: 'Primary Weapon' },
@@ -18,6 +36,7 @@ const LOADOUT_FIELDS = [
   { key: 'equipment', label: 'Equipment' },
   { key: 'perk1',     label: 'Perk 1' },
   { key: 'perk2',     label: 'Perk 2' },
+  { key: 'perk3',     label: 'Perk 3' },
 ];
 
 const inputCls =
@@ -53,6 +72,8 @@ export default function Profile() {
         equipment: profile.loadout?.equipment || '',
         perk1:     profile.loadout?.perk1     || '',
         perk2:     profile.loadout?.perk2     || '',
+        perk3:     profile.loadout?.perk3     || '',
+        server:    profile.loadout?.server    || '',
       },
     });
   }
@@ -260,6 +281,22 @@ export default function Profile() {
                 <p className="text-white text-sm font-mono">{profile.gamertag}</p>
               ) : (
                 <p className="text-zinc-600 text-sm italic">Not set — click Edit Profile</p>
+              )}
+            </div>
+
+            <div>
+              <p className="text-zinc-500 text-xs">Preferred Server</p>
+              {editing ? (
+                <select
+                  value={form.loadout.server}
+                  onChange={(e) => setForm((f) => ({ ...f, loadout: { ...f.loadout, server: e.target.value } }))}
+                  className={inputCls + ' mt-0.5'}
+                >
+                  <option value="">— Select —</option>
+                  {SERVERS.map((s) => <option key={s}>{s}</option>)}
+                </select>
+              ) : (
+                <p className="text-white text-sm">{profile.loadout?.server || '—'}</p>
               )}
             </div>
           </div>

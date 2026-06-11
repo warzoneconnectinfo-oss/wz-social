@@ -12,6 +12,7 @@ const LOADOUT_FIELDS = [
   { key: 'equipment', label: 'Equipment' },
   { key: 'perk1',     label: 'Perk 1' },
   { key: 'perk2',     label: 'Perk 2' },
+  { key: 'perk3',     label: 'Perk 3' },
 ];
 
 function getCodStatsUrl(platform, gamertag) {
@@ -253,6 +254,12 @@ export default function UserProfile() {
                   {profile.platform === 'Xbox' ? 'Xbox Gamertag' : (profile.platform?.startsWith('PlayStation')) ? 'PSN ID' : 'Activision ID'}
                 </p>
                 <p className="text-white text-sm font-mono">{profile.gamertag}</p>
+              </div>
+            )}
+            {profile.loadout?.server && (
+              <div>
+                <p className="text-zinc-500 text-xs">Preferred Server</p>
+                <p className="text-white text-sm">{profile.loadout.server}</p>
               </div>
             )}
           </div>

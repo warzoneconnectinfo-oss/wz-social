@@ -5,17 +5,18 @@ import { supabase } from '../lib/supabase';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 const FIXED_ROOMS = [
-  { name: 'Battle Royale Casual',    description: 'Find casual BR teammates',              category: 'Battle Royale' },
-  { name: 'Battle Royale Regular',   description: 'Find regular BR teammates',             category: 'Battle Royale' },
-  { name: 'Resurgence Casuals',      description: 'Find casual Resurgence teammates',      category: 'Resurgence'    },
-  { name: 'Resurgence Regular',      description: 'Find regular Resurgence teammates',     category: 'Resurgence'    },
-  { name: 'Private Lobbies & LTMs',  description: 'Private lobbies & limited time modes',  category: 'Special'       },
-  { name: 'Ranked Resurgence',       description: 'Find Ranked Resurgence teammates',      category: 'Ranked'        },
-  { name: 'Ranked Multiplayer',      description: 'Find Ranked Multiplayer teammates',     category: 'Ranked'        },
-  { name: 'Regular Map Multiplayer', description: 'Find Multiplayer teammates',            category: 'Multiplayer'   },
+  { name: 'Battle Royale Casual',    description: 'Find casual BR teammates',              category: 'Battle Royale'       },
+  { name: 'Battle Royale Regular',   description: 'Find regular BR teammates',             category: 'Battle Royale'       },
+  { name: 'Resurgence Casuals',      description: 'Find casual Resurgence teammates',      category: 'Resurgence'          },
+  { name: 'Resurgence Regular',      description: 'Find regular Resurgence teammates',     category: 'Resurgence'          },
+  { name: 'Private Lobbies',         description: 'Coordinate and fill private lobbies',   category: 'Private Lobbies'     },
+  { name: 'Limited Time Modes',       description: 'Find teammates for current LTMs',       category: 'Limited Time Modes'  },
+  { name: 'Ranked Resurgence',       description: 'Find Ranked Resurgence teammates',      category: 'Ranked'              },
+  { name: 'Ranked Multiplayer',      description: 'Find Ranked Multiplayer teammates',     category: 'Ranked'              },
+  { name: 'Regular Map Multiplayer', description: 'Find Multiplayer teammates',            category: 'Multiplayer'         },
 ];
 
-const CATEGORIES = ['Battle Royale', 'Resurgence', 'Special', 'Ranked', 'Multiplayer'];
+const CATEGORIES = ['Battle Royale', 'Resurgence', 'Private Lobbies', 'Limited Time Modes', 'Ranked', 'Multiplayer'];
 
 export default function Rooms() {
   const { user } = useAuth();

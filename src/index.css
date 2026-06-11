@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Dark gaming base */
+/* Dark gaming base (default) */
 body {
   background-color: #09090b;
   color: #f4f4f5;
@@ -14,3 +14,61 @@ body {
 ::-webkit-scrollbar-track { background: #18181b; }
 ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+
+/* ─── Light mode overrides ─── */
+html.light body {
+  background-color: #f9fafb;
+  color: #111827;
+}
+
+html.light ::-webkit-scrollbar-track { background: #f3f4f6; }
+html.light ::-webkit-scrollbar-thumb { background: #d1d5db; }
+html.light ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* Backgrounds */
+html.light .bg-zinc-950 { background-color: #f9fafb; }
+html.light .bg-zinc-900 { background-color: #ffffff; }
+html.light .bg-zinc-800 { background-color: #f3f4f6; }
+html.light .bg-zinc-700 { background-color: #e5e7eb; }
+
+/* Hover backgrounds */
+html.light .hover\:bg-zinc-800:hover { background-color: #f3f4f6; }
+html.light .hover\:bg-zinc-700:hover { background-color: #e5e7eb; }
+html.light .hover\:bg-zinc-600:hover { background-color: #d1d5db; }
+
+/* Text */
+html.light .text-white    { color: #111827; }
+html.light .text-zinc-100 { color: #1f2937; }
+html.light .text-zinc-200 { color: #374151; }
+html.light .text-zinc-300 { color: #4b5563; }
+html.light .text-zinc-400 { color: #6b7280; }
+html.light .text-zinc-500 { color: #9ca3af; }
+html.light .text-zinc-600 { color: #9ca3af; }
+
+/* Hover text */
+html.light .hover\:text-white:hover    { color: #111827; }
+html.light .hover\:text-zinc-200:hover { color: #374151; }
+html.light .hover\:text-zinc-300:hover { color: #4b5563; }
+
+/* Borders */
+html.light .border-zinc-900    { border-color: #ffffff; }
+html.light .border-zinc-800    { border-color: #e5e7eb; }
+html.light .border-zinc-700    { border-color: #d1d5db; }
+
+/* Opacity-modified borders */
+html.light .border-zinc-800\/50 { border-color: rgb(229 231 235 / 0.5); }
+
+/* Hover borders */
+html.light .hover\:border-zinc-800:hover { border-color: #e5e7eb; }
+html.light .hover\:border-zinc-700:hover { border-color: #d1d5db; }
+html.light .hover\:border-zinc-600:hover { border-color: #d1d5db; }
+html.light .hover\:border-zinc-500:hover { border-color: #6b7280; }
+
+/* Placeholders */
+html.light .placeholder\:text-zinc-600::placeholder { color: #9ca3af; }
+
+/* Error / status boxes */
+html.light .bg-red-950     { background-color: #fef2f2; }
+html.light .border-red-800 { border-color: #fca5a5; }
+html.light .text-red-300   { color: #dc2626; }
+html.light .text-red-400   { color: #ef4444; }

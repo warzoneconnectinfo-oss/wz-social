@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Shield, Home, Newspaper, MessageSquare, Radio, Users, UserPlus, LogOut, Bell } from 'lucide-react';
+import { Shield, Home, Newspaper, MessageSquare, Radio, Users, UserPlus, LogOut, Bell, Sun, Moon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { supabase } from '../lib/supabase';
 import Avatar from './Avatar';
 
@@ -25,6 +26,7 @@ function Badge({ count }) {
 
 export default function Navbar() {
   const { user, profile } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const location  = useLocation();
   const navigate  = useNavigate();
 
@@ -246,6 +248,15 @@ export default function Navbar() {
               </div>
             )}
           </div>
+
+          {/* Theme toggle */}
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="p-2 text-zinc-400 hover:text-white transition-colors"
+          >
+            {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
+          </button>
 
           {/* Avatar / profile link */}
           <Link

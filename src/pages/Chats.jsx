@@ -8,6 +8,7 @@ import {
 import EmojiPicker from 'emoji-picker-react';
 import { useAuth } from '../context/AuthContext';
 import { useCall } from '../context/CallContext';
+import { useTheme } from '../context/ThemeContext';
 import { supabase } from '../lib/supabase';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Avatar from '../components/Avatar';
@@ -177,6 +178,7 @@ function MsgBubble({ msg, own, onEdit, onDelete, onReply, onForward, selectMode,
 export default function Chats() {
   const { user, profile, onlineUsers } = useAuth();
   const { initiateCall } = useCall();
+  const { theme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -998,7 +1000,7 @@ export default function Chats() {
                   <div ref={emojiRef} className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 shadow-2xl rounded-xl overflow-hidden">
                     <EmojiPicker
                       onEmojiClick={(d) => insertEmoji(d.emoji)}
-                      theme="dark"
+                      theme={theme}
                       height={380}
                       width={320}
                       skinTonesDisabled

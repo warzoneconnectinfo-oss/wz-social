@@ -54,10 +54,12 @@ export default function Clans() {
   const [activeTab, setActiveTab]           = useState('chat');
   const [pendingInvites, setPendingInvites] = useState([]);
 
+  const [clanSearch, setClanSearch] = useState('');
+
   // create form
   const [showForm, setShowForm]   = useState(false);
   const [creating, setCreating]   = useState(false);
-  const [newClan, setNewClan]     = useState({ name: '', tag: '', description: '', is_public: true });
+  const [newClan, setNewClan]     = useState({ name: '', tag: '', description: '', is_recruiting: true });
 
   // chat
   const [msgText, setMsgText]           = useState('');
@@ -84,6 +86,12 @@ export default function Clans() {
   const [inviteSearch, setInviteSearch]   = useState('');
   const [inviteResults, setInviteResults] = useState([]);
   const [inviting, setInviting]           = useState(false);
+
+  // join requests (owner sees these; user tracks their own)
+  const [joinRequests,   setJoinRequests]   = useState([]);
+  const [myRequest,      setMyRequest]      = useState(null);
+  const [requestingJoin, setRequestingJoin] = useState(false);
+  const [togglingLock,   setTogglingLock]   = useState(false);
 
   // transfer / leave modal
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -147,14 +155,22 @@ export default function Clans() {
   useEffect(() => {
     if (!selected) return;
     setUnreadClans(prev => { const n = new Set(prev); n.delete(selected.id); return n; });
+    setJoinRequests([]);
+    setMyRequest(null);
     loadMembers(selected.id);
     loadMessages(selected.id);
     loadTimeouts(selected.id);
     loadClanReadStatus(selected.id);
     upsertClanReadStatus(selected.id);
+    loadMyRequest(selected.id);
     subscribeChat(selected.id, selected.name);
     return () => chatSubRef.current?.unsubscribe();
   }, [selected?.id]);
+
+  // load join requests once we know the user is owner (members loaded asynchronously)
+  useEffect(() => {
+    if (isOwner && selected?.id) loadJoinRequests(selected.id);
+  }, [isOwner, selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     msgEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -185,20 +201,17 @@ export default function Clans() {
       .from('clans')
       .select('*, owner:profiles!owner_id(username, display_name)')
       .order('created_at', { ascending: false });
-    const hidden = (() => {
-      try { return new Set(JSON.parse(localStorage.getItem(`hiddenClans_${user.id}`) || '[]')); }
-      catch { return new Set(); }
-    })();
-    setClans((data || []).filter(c => !hidden.has(c.id)));
+    setClans(data || []);
   }
 
   async function loadMyInvites() {
     const { data } = await supabase
       .from('clan_invites')
-      .select('*, clan:clans(id, name, tag), inviter:profiles!inviter_id(username, display_name)')
+      .select('*, clan:clans(id, name, tag, owner_id), inviter:profiles!inviter_id(username, display_name)')
       .eq('invitee_id', user.id)
       .eq('status', 'pending');
-    setPendingInvites(data || []);
+    // Only show real owner-sent invites; exclude join requests others sent to this user as owner
+    setPendingInvites((data || []).filter(inv => inv.inviter_id === inv.clan?.owner_id));
   }
 
   async function loadMembers(clanId) {
@@ -271,6 +284,25 @@ export default function Clans() {
         ({ new: row }) => {
           if (row) setClanReadStatus(prev => ({ ...prev, [row.user_id]: row.last_seen_at }));
         })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'clan_invites', filter: `clan_id=eq.${clanId}` },
+        async ({ new: req }) => {
+          // New join request directed at this owner
+          if (req.invitee_id !== user?.id || req.inviter_id === user?.id) return;
+          const { data: p } = await supabase.from('profiles').select('id, username, display_name').eq('id', req.inviter_id).single();
+          setJoinRequests(prev => prev.find(r => r.id === req.id) ? prev : [...prev, { ...req, requester: p }]);
+        })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'clan_invites', filter: `clan_id=eq.${clanId}` },
+        ({ new: req }) => {
+          if (req.status !== 'pending') {
+            setJoinRequests(prev => prev.filter(r => r.id !== req.id));
+            // Clear the requester's own pending request display when accepted/declined
+            if (req.inviter_id === user?.id) setMyRequest(null);
+          }
+        })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'clan_invites' },
+        ({ old: req }) => {
+          if (req.id) setJoinRequests(prev => prev.filter(r => r.id !== req.id));
+        })
       .subscribe();
   }
 
@@ -283,14 +315,23 @@ export default function Clans() {
       tag: newClan.tag.trim().toUpperCase(),
       description: newClan.description.trim() || null,
       owner_id: user.id,
-      is_public: newClan.is_public,
-      is_recruiting: newClan.is_public,
+      is_recruiting: newClan.is_recruiting,
     }).select().single();
-    if (err) { setError(err.message); setCreating(false); return; }
+    if (err) {
+      if (err.code === '23505') {
+        setError(err.message.includes('clans_tag_key')
+          ? 'That clan tag is already taken. Choose a different tag.'
+          : 'A clan with that name already exists. Choose a different name.');
+      } else {
+        setError(err.message);
+      }
+      setCreating(false);
+      return;
+    }
     await supabase.from('clan_members').insert({ clan_id: clan.id, profile_id: user.id, role: 'owner' });
     await supabase.from('profiles').update({ clan_id: clan.id }).eq('id', user.id);
     await refreshProfile();
-    setNewClan({ name: '', tag: '', description: '', is_public: true });
+    setNewClan({ name: '', tag: '', description: '', is_recruiting: true });
     setShowForm(false);
     await loadClans();
     setSelected(clan);
@@ -306,6 +347,117 @@ export default function Clans() {
     await refreshProfile();
     await loadClans();
     loadMembers(clanId);
+  }
+
+  // ── Join-request helpers ──────────────────────────────────────────────────
+
+  async function loadJoinRequests(clanId) {
+    const { data } = await supabase
+      .from('clan_invites')
+      .select('*, requester:profiles!inviter_id(id, username, display_name)')
+      .eq('clan_id', clanId)
+      .eq('invitee_id', user.id)   // directed at the current owner
+      .neq('inviter_id', user.id)  // not from the owner themselves
+      .eq('status', 'pending');
+    setJoinRequests(data || []);
+  }
+
+  async function loadMyRequest(clanId) {
+    if (userClanId) { setMyRequest(null); return; }
+    const { data } = await supabase
+      .from('clan_invites')
+      .select('id, status')
+      .eq('clan_id', clanId)
+      .eq('inviter_id', user.id)
+      .in('status', ['pending'])
+      .maybeSingle();
+    setMyRequest(data || null);
+  }
+
+  async function requestJoin(clanId) {
+    if (userClanId) { setError('Leave your current clan first.'); return; }
+    setRequestingJoin(true);
+    setError('');
+    const clan = clans.find(c => c.id === clanId) || selected;
+    if (!clan?.owner_id) { setRequestingJoin(false); return; }
+    const { error: err } = await supabase.from('clan_invites').insert({
+      clan_id: clanId,
+      inviter_id: user.id,      // the person requesting
+      invitee_id: clan.owner_id, // the leader who approves
+    });
+    if (err) { setError(err.message); }
+    else {
+      setMyRequest({ status: 'pending' });
+      const { error: notifErr } = await supabase.from('notifications').insert({
+        user_id: clan.owner_id,
+        type: 'clan_invite',
+        from_id: user.id,
+        reference_id: clanId,
+        message: `${profile?.display_name || profile?.username || 'Someone'} wants to join ${clan.name}`,
+      });
+      if (notifErr) console.error('join-request notif failed:', notifErr.message);
+    }
+    setRequestingJoin(false);
+  }
+
+  async function cancelRequest(clanId) {
+    if (!myRequest) return;
+    setRequestingJoin(true);
+    setError('');
+    const clan = clans.find(c => c.id === clanId) || selected;
+    const { error: err } = await supabase.from('clan_invites').delete()
+      .eq('inviter_id', user.id).eq('clan_id', clanId).eq('status', 'pending');
+    if (err) { setError(err.message); setRequestingJoin(false); return; }
+    if (clan?.owner_id) {
+      await supabase.from('notifications').insert({
+        user_id: clan.owner_id,
+        type: 'clan_invite',
+        from_id: user.id,
+        reference_id: clanId,
+        message: `${profile?.display_name || profile?.username || 'Someone'} cancelled their join request for ${clan.name}`,
+      });
+    }
+    setMyRequest(null);
+    setRequestingJoin(false);
+  }
+
+  async function approveRequest(requestId, requesterId) {
+    if (!selected) return;
+    await supabase.from('clan_invites').update({ status: 'accepted' }).eq('id', requestId);
+    const { error: err } = await supabase.from('clan_members').insert({
+      clan_id: selected.id, profile_id: requesterId, role: 'member',
+    });
+    if (err) { setError(err.message); return; }
+    await supabase.from('profiles').update({ clan_id: selected.id }).eq('id', requesterId);
+    await supabase.from('notifications').insert({
+      user_id: requesterId, type: 'clan_invite', from_id: user.id,
+      reference_id: selected.id,
+      message: `Your request to join [${selected.tag}] ${selected.name} was approved!`,
+    }).catch(() => {});
+    setJoinRequests(prev => prev.filter(r => r.id !== requestId));
+    loadMembers(selected.id);
+  }
+
+  async function declineRequest(requestId) {
+    await supabase.from('clan_invites').update({ status: 'declined' }).eq('id', requestId);
+    setJoinRequests(prev => prev.filter(r => r.id !== requestId));
+  }
+
+  async function toggleClanLock() {
+    if (!selected || !isOwner || togglingLock) return;
+    setTogglingLock(true);
+    setError('');
+    const newRecruiting = !selected.is_recruiting;
+    const { data: ok, error: err } = await supabase.rpc('set_clan_lock', {
+      p_clan_id: selected.id,
+      p_is_recruiting: newRecruiting,
+    });
+    if (err) { setError('Could not update clan: ' + err.message); setTogglingLock(false); return; }
+    if (!ok) { setError('Could not update clan — permission denied.'); setTogglingLock(false); return; }
+    const updated = { ...selected, is_recruiting: newRecruiting };
+    setSelected(updated);
+    setClans(prev => prev.map(c => c.id === selected.id ? { ...c, is_recruiting: newRecruiting } : c));
+    setTogglingLock(false);
   }
 
   async function leaveClan() {
@@ -348,7 +500,8 @@ export default function Clans() {
 
   async function transferLeadership(memberId) {
     if (!selected || !isOwner) return;
-    await supabase.from('clan_members').update({ role: 'owner' }).eq('clan_id', selected.id).eq('profile_id', memberId);
+    const { error: err } = await supabase.from('clan_members').update({ role: 'owner' }).eq('clan_id', selected.id).eq('profile_id', memberId);
+    if (err) { setError('Could not transfer leadership: ' + err.message); return; }
     await supabase.from('clan_members').update({ role: 'member' }).eq('clan_id', selected.id).eq('profile_id', user.id);
     await supabase.from('clans').update({ owner_id: memberId }).eq('id', selected.id);
     await loadClans();
@@ -357,8 +510,11 @@ export default function Clans() {
 
   async function kickMember(memberId) {
     if (!selected || !isOwner) return;
-    // profiles.clan_id is cleared automatically by the on_clan_member_removed trigger
-    await supabase.from('clan_members').delete().eq('clan_id', selected.id).eq('profile_id', memberId);
+    const { error: err } = await supabase
+      .from('clan_members').delete()
+      .eq('clan_id', selected.id).eq('profile_id', memberId);
+    if (err) { setError('Could not remove member: ' + err.message); return; }
+    // profiles.clan_id is cleared by the on_clan_member_removed trigger
     loadMembers(selected.id);
   }
 
@@ -679,25 +835,27 @@ export default function Clans() {
               <div>
                 <label className="block text-zinc-500 text-xs mb-2">Visibility</label>
                 <div className="flex gap-3">
-                  <button type="button" onClick={() => setNewClan({ ...newClan, is_public: true })}
+                  <button type="button" onClick={() => setNewClan({ ...newClan, is_recruiting: true })}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                      newClan.is_public
+                      newClan.is_recruiting
                         ? 'bg-orange-500/20 border-orange-500 text-orange-400'
                         : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                     }`}>
-                    <Globe size={14} /> Public
+                    <Globe size={14} /> Open
                   </button>
-                  <button type="button" onClick={() => setNewClan({ ...newClan, is_public: false })}
+                  <button type="button" onClick={() => setNewClan({ ...newClan, is_recruiting: false })}
                     className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                      !newClan.is_public
+                      !newClan.is_recruiting
                         ? 'bg-orange-500/20 border-orange-500 text-orange-400'
                         : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600'
                     }`}>
-                    <Lock size={14} /> Closed (Invite Only)
+                    <Lock size={14} /> Locked
                   </button>
                 </div>
                 <p className="text-zinc-600 text-xs mt-1">
-                  {newClan.is_public ? 'Anyone can join this clan.' : 'Only invited players can join.'}
+                  {newClan.is_recruiting
+                    ? 'Anyone can join this clan directly.'
+                    : 'Players must request to join. You approve or deny each request.'}
                 </p>
               </div>
               <div className="flex gap-3">
@@ -717,9 +875,24 @@ export default function Clans() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* ── Clan list ─────────────────────────────────────────────── */}
           <div className="space-y-2">
-            {clans.length === 0 ? (
-              <p className="text-zinc-600 text-sm text-center py-12">No clans yet.</p>
-            ) : clans.map(clan => (
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+              <input
+                value={clanSearch}
+                onChange={e => setClanSearch(e.target.value)}
+                placeholder="Search clans…"
+                className="w-full bg-zinc-800 border border-zinc-700 text-white rounded-lg pl-8 pr-3 py-2 text-sm focus:outline-none focus:border-orange-500 placeholder:text-zinc-600 transition-colors"
+              />
+            </div>
+            {(() => {
+              const q = clanSearch.toLowerCase().trim();
+              const filtered = q
+                ? clans.filter(c => c.name.toLowerCase().includes(q) || c.tag.toLowerCase().includes(q))
+                : clans.filter(c => !hiddenClans.has(c.id));
+              if (filtered.length === 0) return (
+                <p className="text-zinc-600 text-sm text-center py-12">{q ? 'No clans match your search.' : 'No clans yet.'}</p>
+              );
+              return filtered.map(clan => (
               <div key={clan.id} className={`group relative bg-zinc-900 border rounded-xl transition-all ${
                 selected?.id === clan.id ? 'border-orange-500/50 bg-orange-500/5' : 'border-zinc-800 hover:border-zinc-700'
               }`}>
@@ -737,9 +910,9 @@ export default function Clans() {
                     <div className="min-w-0 flex-1">
                       <p className={`text-sm font-medium truncate ${unreadClans.has(clan.id) ? 'text-white' : 'text-zinc-200'}`}>{clan.name}</p>
                       <div className="flex items-center gap-1 mt-0.5">
-                        {clan.is_public
-                          ? <><Globe size={10} className="text-green-400" /><span className="text-green-400 text-xs">Public</span></>
-                          : <><Lock size={10} className="text-zinc-500" /><span className="text-zinc-500 text-xs">Invite Only</span></>
+                        {clan.is_recruiting
+                          ? <><Globe size={10} className="text-green-400" /><span className="text-green-400 text-xs">Open</span></>
+                          : <><Lock size={10} className="text-orange-400" /><span className="text-orange-400 text-xs">Locked</span></>
                         }
                       </div>
                     </div>
@@ -750,7 +923,8 @@ export default function Clans() {
                   <X size={13} />
                 </button>
               </div>
-            ))}
+            ));
+          })()}
           </div>
 
           {/* ── Clan detail ───────────────────────────────────────────── */}
@@ -761,16 +935,30 @@ export default function Clans() {
                 {/* Clan header */}
                 <div className="flex items-start justify-between p-5 border-b border-zinc-800 shrink-0">
                   <div>
-                    <div className="flex items-center gap-2 mb-0.5">
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                       <span className="text-orange-400 font-mono font-bold text-sm">[{selected.tag}]</span>
                       <h2 className="text-white text-lg font-bold">{selected.name}</h2>
                       {userClanId === selected.id && (
                         <span className="text-xs bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full">Your Clan</span>
                       )}
-                      {selected.is_public
-                        ? <span className="text-xs flex items-center gap-1 text-green-400"><Globe size={11} />Public</span>
-                        : <span className="text-xs flex items-center gap-1 text-zinc-500"><Lock size={11} />Invite Only</span>
+                      {selected.is_recruiting
+                        ? <span className="text-xs flex items-center gap-1 text-green-400"><Globe size={11} />Open</span>
+                        : <span className="text-xs flex items-center gap-1 text-orange-400"><Lock size={11} />Locked</span>
                       }
+                      {/* Owner: toggle open / locked */}
+                      {isOwner && (
+                        <button
+                          onClick={toggleClanLock}
+                          disabled={togglingLock}
+                          title={selected.is_recruiting ? 'Lock clan — players must request to join' : 'Open clan — anyone can join directly'}
+                          className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-50 ${
+                            selected.is_recruiting
+                              ? 'border-zinc-600 text-zinc-400 hover:border-orange-500 hover:text-orange-400'
+                              : 'border-orange-500/50 text-orange-400 hover:border-green-600 hover:text-green-400'
+                          }`}>
+                          {selected.is_recruiting ? <><Lock size={11} />Lock</> : <><Globe size={11} />Open</>}
+                        </button>
+                      )}
                     </div>
                     <p className="text-zinc-400 text-xs">{selected.description || 'No description.'}</p>
                     <p className="text-zinc-600 text-xs mt-0.5">
@@ -786,14 +974,29 @@ export default function Clans() {
                       </button>
                     ) : userClanId ? (
                       <span className="text-zinc-600 text-xs">In another clan</span>
-                    ) : selected.is_public ? (
+                    ) : selected.is_recruiting ? (
                       <button onClick={() => joinClan(selected.id)}
                         className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-medium px-4 py-1.5 rounded-lg transition-colors">
                         Join
                       </button>
-                    ) : (
-                      <span className="text-zinc-600 text-xs">Invite only</span>
-                    )}
+                    ) : !isMember && myRequest ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-500 text-xs flex items-center gap-1.5">
+                          <Clock size={11} className="text-orange-400" />
+                          <span>Request sent</span>
+                        </span>
+                        <button onClick={() => cancelRequest(selected.id)} disabled={requestingJoin}
+                          className="text-xs border border-zinc-700 hover:border-red-700 text-zinc-500 hover:text-red-400 px-2.5 py-1 rounded-lg transition-colors disabled:opacity-50">
+                          Cancel
+                        </button>
+                      </div>
+                    ) : !isMember ? (
+                      <button onClick={() => requestJoin(selected.id)} disabled={requestingJoin}
+                        className="flex items-center gap-1.5 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 text-white text-xs font-medium px-4 py-1.5 rounded-lg transition-colors">
+                        <UserPlus size={12} />
+                        {requestingJoin ? 'Sending…' : 'Request to Join'}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -808,6 +1011,11 @@ export default function Clans() {
                             : 'border-transparent text-zinc-500 hover:text-zinc-300'
                         }`}>
                         <Icon size={14} /> {label}
+                        {tab === 'members' && isOwner && joinRequests.length > 0 && (
+                          <span className="ml-1 bg-orange-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                            {joinRequests.length}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -1078,6 +1286,50 @@ export default function Clans() {
                 {/* ── Members tab ───────────────────────────────────────── */}
                 {isMember && activeTab === 'members' && (
                   <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+                    {/* Join Requests (owner only, locked clan) */}
+                    {isOwner && !selected.is_recruiting && (
+                      <div>
+                        <p className="text-zinc-500 text-xs font-semibold uppercase tracking-wider mb-2">
+                          Join Requests
+                          {joinRequests.length > 0 && (
+                            <span className="ml-2 bg-orange-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                              {joinRequests.length}
+                            </span>
+                          )}
+                        </p>
+                        {joinRequests.length === 0 ? (
+                          <p className="text-zinc-600 text-xs py-2">No pending requests.</p>
+                        ) : (
+                          <div className="space-y-2 mb-2">
+                            {joinRequests.map(req => {
+                              const name = req.requester?.display_name || req.requester?.username || '?';
+                              return (
+                                <div key={req.id} className="flex items-center gap-3 bg-zinc-800/80 border border-orange-500/20 rounded-lg px-3 py-2">
+                                  <div className="w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-400 text-xs font-bold shrink-0">
+                                    {name[0].toUpperCase()}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-white text-sm truncate">{name}</p>
+                                    <p className="text-zinc-500 text-xs truncate">@{req.requester?.username} · wants to join</p>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button onClick={() => approveRequest(req.id, req.inviter_id)}
+                                      className="flex items-center gap-1 bg-green-600 hover:bg-green-700 text-white text-xs px-2.5 py-1.5 rounded-lg transition-colors">
+                                      <Check size={11} /> Approve
+                                    </button>
+                                    <button onClick={() => declineRequest(req.id)}
+                                      className="flex items-center gap-1 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-xs px-2.5 py-1.5 rounded-lg transition-colors">
+                                      <X size={11} /> Decline
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Invite (owner only) */}
                     {isOwner && (
